@@ -8,16 +8,18 @@ from keras.preprocessing.sequence import pad_sequences
 from numpy import random
 from gensim.models import word2vec
 from word2vecReader import Word2Vec
-import sys  
-reload(sys)  
+import sys
+reload(sys)
+
 sys.setdefaultencoding('utf8')
 
 data_dir = '../data'
 tweet_data_dir = '../data/tweet_new/'
 # h5_file = "img_vgg_feature_all.h5"
 h5_file = 'img_vgg_feature_224.h5'
-IMAGEID='IMGID'
+IMAGEID = 'IMGID'
 img_feature_file = h5py.File(os.path.join(data_dir, h5_file), 'r')
+
 
 def load_sentence(IMAGEID, tweet_data_dir, train_name, dev_name, test_name):
 	"""
@@ -29,8 +31,8 @@ def load_sentence(IMAGEID, tweet_data_dir, train_name, dev_name, test_name):
 	img_id = []
 	sentences = []
 	sentence = []
-	sent_maxlen =0
-	word_maxlen =0
+	sent_maxlen = 0
+	word_maxlen = 0
 	img_to_feature = []
 	datasplit = []
 
