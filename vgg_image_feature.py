@@ -1,23 +1,14 @@
 #!/usr/bin/env python
 import matplotlib
-from matplotlib import pyplot as plt
-# import theano
 import cv2
 import numpy as np
-import scipy as sp
-import sys
 from keras.models import Sequential
-from keras.layers.core import Flatten, Dense, Dropout
 from keras.layers.convolutional import Convolution2D
 from keras.layers.convolutional import MaxPooling2D, ZeroPadding2D
-from keras.optimizers import SGD
 from keras import backend as K
 import h5py
 import time
 import os
-import codecs
-
-matplotlib.use('Agg')
 
 
 def get_features(model, layer, X_batch):
@@ -31,39 +22,39 @@ def get_features(model, layer, X_batch):
 def VGG_16(weights_path=None):
     model = Sequential()
     model.add(ZeroPadding2D((1, 1), input_shape=(3, 224, 224)))
-    model.add(Convolution2D(64, 3, 3, activation='relu'))
+    model.add(Convolution2D(64, (3, 3), activation='relu'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(64, 3, 3, activation='relu'))
+    model.add(Convolution2D(64, (3, 3), activation='relu'))
     model.add(MaxPooling2D((2, 2), strides=(2, 2)))
 
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(128, 3, 3, activation='relu'))
+    model.add(Convolution2D(128, (3, 3), activation='relu'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(128, 3, 3, activation='relu'))
+    model.add(Convolution2D(128, (3, 3), activation='relu'))
     model.add(MaxPooling2D((2, 2), strides=(2, 2)))
 
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(256, 3, 3, activation='relu'))
+    model.add(Convolution2D(256, (3, 3), activation='relu'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(256, 3, 3, activation='relu'))
+    model.add(Convolution2D(256, (3, 3), activation='relu'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(256, 3, 3, activation='relu'))
+    model.add(Convolution2D(256, (3, 3), activation='relu'))
     model.add(MaxPooling2D((2, 2), strides=(2, 2)))
 
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(Convolution2D(512, (3, 3), activation='relu'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(Convolution2D(512, (3, 3), activation='relu'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(Convolution2D(512, (3, 3), activation='relu'))
     model.add(MaxPooling2D((2, 2), strides=(2, 2)))
 
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(Convolution2D(512, (3, 3), activation='relu'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(Convolution2D(512, (3, 3), activation='relu'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu'))
+    model.add(Convolution2D(512, (3, 3), activation='relu'))
     model.add(MaxPooling2D((2, 2), strides=(2, 2)))
 
     if weights_path:
@@ -73,11 +64,11 @@ def VGG_16(weights_path=None):
 
 
 if __name__ == '__main__':
-    dataPath = '../data/ner_img/'  # root image path
-    tweet_data_path = '../data/tweet/all.txt'  # all.txt store
-    error = '../data/vgg_error_img_id'
+    dataPath = './data/ner_img/'  # root image path
+    tweet_data_path = './data/ner_img'  # all.txt store
+    error = './data/vgg_error_img_id'
     # image feature stored file
-    store_img_feature = '../data/img_vgg_feature_224.h5'
+    store_img_feature = './data/img_vgg_feature_224.h5'
     # store the image id which can not be resize
     error_img_id = open(error, 'w')
     # store the output -- img feature vector
@@ -85,15 +76,13 @@ if __name__ == '__main__':
     mean_pixel = [103.939, 116.779, 123.68]
 
     # load pretrained model
-    model = VGG_16('../data/vgg16_weights_th_dim_ordering_th_kernels_notop.h5')
+    model = VGG_16('./data/vgg16_weights_th_dim_ordering_th_kernels_notop.h5')
 
     img_id_list = []  # store image id
-
-    with codecs.open(tweet_data_path, 'r') as file:
-        for line in file:
-            rev = []
-            rev = line.split('\t')
-            img_id_list.append(rev[0])
+    for x in os.listdir(dataPath):
+        [x, y] = os.path.splitext(x)
+        if y == '.jpg':
+            img_id_list.append(x)
 
     for item in img_id_list:
         print("process " + item + '.jpg')
@@ -101,14 +90,13 @@ if __name__ == '__main__':
         print(img_path)
         try:
             im = cv2.resize(cv2.imread(img_path), (224, 224))
-        except:
+        except Exception:
             error_img_id.write(item + '\n')
             continue
         for c in range(3):
             im[:, :, c] = im[:, :, c] - mean_pixel[c]
         im = im.transpose((2, 0, 1))
         im = np.expand_dims(im, axis=0)
-
         start = time.time()
 
         features = get_features(model, 30, im)

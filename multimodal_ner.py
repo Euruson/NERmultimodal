@@ -1,7 +1,9 @@
 from keras.models import Sequential, Model
 from keras.layers.embeddings import Embedding
-from keras.layers.core import Activation, Dense, Merge, Permute, \
-    Flatten, Dropout, TimeDistributedDense, Reshape, Layer, \
+from keras.layers import add, subtract, multiply, average, maximum, \
+    concatenate, dot
+from keras.layers.core import Activation, Dense, Permute, \
+    Flatten, Dropout, Reshape, Layer, \
     ActivityRegularization, RepeatVector, Lambda
 from keras.layers.recurrent import LSTM
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, \
@@ -9,17 +11,15 @@ from keras.layers.convolutional import Convolution2D, MaxPooling2D, \
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers.wrappers import Bidirectional, TimeDistributed
 from keras.callbacks import History
-from keras.layers import Input, Dense, Embedding, merge, \
-    Dropout, BatchNormalization
+from keras.layers import Input, merge, BatchNormalization
 from keras.optimizers import SGD, Adagrad, Adam, RMSprop
 from keras.utils import np_utils
-from keras.layers import ChainCRF
+from keras_contrib.layers import CRF
+# from keras.layers import ChainCRF
 from keras import backend as K
-import theano.tensor as T
-import cPickle
+import os
 import h5py
 import numpy as np
-
 from load_data_multimodal import load_data
 from ner_evaluate import evaluate, evaluate_each_class
 
@@ -51,12 +51,13 @@ if __name__ == '__main__':
     num_dev = 1000
     num_test = 3257
     num_sent = 8257
-
     """
 
     print('loading data...')
-    id_to_vocb, word_matrix, sentences, datasplit, x, x_c, img_x, y,
-    num_sentence, vocb, vocb_char, labelVoc = load_data()
+    (id_to_vocb, word_matrix, sentences, datasplit, x, x_c, img_x, y,
+     num_sentence, vocb, vocb_char, labelVoc) = load_data()
+
+    print('***************')
 
     word_maxlen = 30
     sent_maxlen = 35
@@ -99,8 +100,15 @@ if __name__ == '__main__':
     print('Vocab size of char level:', char_vocab_size, 'unique characters')
 
     print('--------')
+    print("tr_x, tr_x_c, tr_img_x", tr_x.shape, tr_x_c.shape,
+          tr_img_x[0].shape)
+
+    print("img_x.shape", img_x.shape)
     print('x_[0], x_c[0], img_x[0].shape, y[0]')
-    print(x[0], x_c[0], img_x[0].shape, y[0])
+    print(x[0])
+    print(x_c[0])
+    print(img_x[0].shape)
+    print(y[0])
 
     print('--------')
     print('x.shape:', x.shape)
@@ -112,7 +120,7 @@ if __name__ == '__main__':
     w_emb_dim_char_level = 50
     final_w_emb_dim = 200
 
-    nb_epoch = 25
+    nb_epoch = 500
     batch_size = 10
 
     feat_dim = 512
@@ -131,7 +139,8 @@ if __name__ == '__main__':
         output_dim=w_emb_dim,
         weights=[word_matrix],
         input_length=sent_maxlen,
-        mask_zero=False)(w_tweet)
+        mask_zero=False,
+        trainable=False)(w_tweet)
     w_feature = Bidirectional(
         LSTM(
             w_emb_dim,
@@ -148,27 +157,21 @@ if __name__ == '__main__':
     c_reshape = Reshape((sent_maxlen, word_maxlen, c_emb_dim))(c_emb)
     c_conv1 = TimeDistributed(
         Convolution1D(
-            nb_filter=32,
-            filter_length=2,
-            border_mode='same',
+            filters=32, kernel_size=2, padding='same',
             activation='relu'))(c_reshape)
-    c_pool1 = TimeDistributed(MaxPooling1D(pool_length=2))(c_conv1)
+    c_pool1 = TimeDistributed(MaxPooling1D(pool_size=2))(c_conv1)
     c_dropout1 = TimeDistributed(Dropout(0.25))(c_pool1)
     c_conv2 = TimeDistributed(
         Convolution1D(
-            nb_filter=32,
-            filter_length=3,
-            border_mode='same',
+            filters=32, kernel_size=3, padding='same',
             activation='relu'))(c_dropout1)
-    c_pool2 = TimeDistributed(MaxPooling1D(pool_length=2))(c_conv2)
+    c_pool2 = TimeDistributed(MaxPooling1D(pool_size=2))(c_conv2)
     c_dropout2 = TimeDistributed(Dropout(0.25))(c_pool2)
     c_conv3 = TimeDistributed(
         Convolution1D(
-            nb_filter=32,
-            filter_length=4,
-            border_mode='same',
+            filters=32, kernel_size=4, padding='same',
             activation='relu'))(c_dropout2)
-    c_pool3 = TimeDistributed(MaxPooling1D(pool_length=2))(c_conv3)
+    c_pool3 = TimeDistributed(MaxPooling1D(pool_size=2))(c_conv3)
     c_dropout3 = TimeDistributed(Dropout(0.25))(c_pool3)
     c_batchNorm = BatchNormalization()(c_dropout3)
     c_flatten = TimeDistributed(Flatten())(c_batchNorm)
@@ -178,9 +181,13 @@ if __name__ == '__main__':
     c_feature = TimeDistributed(Dense(w_emb_dim_char_level))(c_emb2)
 
     # merge the feature of word level and char level
-    merge_w_c_emb = merge([w_feature, c_feature], mode='concat', concat_axis=2)
+    # merge_w_c_emb = merge(
+    #    [w_feature, c_feature], mode='concat', concat_axis=2)
+    merge_w_c_emb = concatenate([w_feature, c_feature], axis=2)
     w_c_feature = Bidirectional(
-        LSTM(output_dim=final_w_emb_dim, return_sequences=True))(merge_w_c_emb)
+        LSTM(units=final_w_emb_dim, return_sequences=True))(merge_w_c_emb)
+    # w_c_feature = Bidirectional(
+    # LSTM(output_dim=final_w_emb_dim, return_sequences=True))(merge_w_c_emb)
 
     # reshape the image representation
     img = Input(shape=(1, feat_dim, w, w))
@@ -196,16 +203,18 @@ if __name__ == '__main__':
         Dense(final_w_emb_dim)))(w_repeat)
     img_permute_reshape = TimeDistributed(
         TimeDistributed(Dense(final_w_emb_dim)))(img_permute_reshape)
-    img_w_merge = merge([img_permute_reshape, w_repeat], mode='concat')
 
+    # img_w_merge = merge([img_permute_reshape, w_repeat], mode='concat')
+    img_w_merge = concatenate([img_permute_reshape, w_repeat])
     att_w = TimeDistributed(Activation('tanh'))(img_w_merge)
     att_w = TimeDistributed(TimeDistributed(Dense(1)))(att_w)
     att_w = TimeDistributed(Flatten())(att_w)
     att_w_probability = Activation('softmax')(att_w)
 
     img_permute_r = TimeDistributed(Dense(final_w_emb_dim))(img_permute)
-    img_new = merge(
-        [att_w_probability, img_permute_r], mode='dot', dot_axes=(2, 1))
+    # img_new = merge(
+    #    [att_w_probability, img_permute_r], mode='dot', dot_axes=(2, 1))
+    img_new = dot([att_w_probability, img_permute_r], axes=(2, 1))
 
     # image-guided textual attention
     img_new_dense = TimeDistributed(Dense(final_w_emb_dim))(img_new)
@@ -216,14 +225,16 @@ if __name__ == '__main__':
     tweet_rep = RepeatVector(sent_maxlen)(tweet_dense1)
     tweet_rep = Reshape((sent_maxlen, sent_maxlen, final_w_emb_dim))(tweet_rep)
 
-    att_img = merge([img_new_rep, tweet_rep], mode='concat')
+    # att_img = merge([img_new_rep, tweet_rep], mode='concat')
+    att_img = concatenate([img_new_rep, tweet_rep])
     att_img = TimeDistributed(Activation('tanh'))(att_img)
     att_img = TimeDistributed(TimeDistributed(Dense(1)))(att_img)
     att_img = TimeDistributed(Flatten())(att_img)
     att_img_probability = Activation('softmax')(att_img)
 
-    tweet_new = merge(
-        [att_img_probability, tweet_dense], mode='dot', dot_axes=(2, 1))
+    # tweet_new = merge(
+    #    [att_img_probability, tweet_dense], mode='dot', dot_axes=(2, 1))
+    tweet_new = dot([att_img_probability, tweet_dense], axes=(2, 1))
 
     img_new_resize = TimeDistributed(
         Dense(final_w_emb_dim, activation='tanh'))(img_new)
@@ -231,53 +242,86 @@ if __name__ == '__main__':
         Dense(final_w_emb_dim, activation='tanh'))(tweet_new)
 
     # gate -> img new
-    merge_img_w = merge([img_new_resize, tweet_new_resize], mode='sum')
+    # merge_img_w = merge([img_new_resize, tweet_new_resize], mode='sum')
+    merge_img_w = add([img_new_resize, tweet_new_resize])
     gate_img = TimeDistributed(Dense(1, activation='sigmoid'))(merge_img_w)
     gate_img = TimeDistributed(RepeatVector(final_w_emb_dim))(gate_img)
     gate_img = TimeDistributed(Flatten())(gate_img)
-    part_new_img = merge([gate_img, img_new_resize], mode='mul')
+    # part_new_img = merge([gate_img, img_new_resize], mode='mul')
+    part_new_img = multiply([gate_img, img_new_resize])
 
     # gate -> tweet new
     gate_tweet = Lambda(
         lambda_rev_gate, output_shape=(sent_maxlen, final_w_emb_dim))(gate_img)
-    part_new_tweet = merge([gate_tweet, tweet_new_resize], mode='mul')
+    # part_new_tweet = merge([gate_tweet, tweet_new_resize], mode='mul')
+    part_new_tweet = multiply([gate_tweet, tweet_new_resize])
 
-    part_img_w = merge([part_new_img, part_new_tweet], mode='concat')
+    # part_img_w = merge([part_new_img, part_new_tweet], mode='concat')
+    part_img_w = concatenate([part_new_img, part_new_tweet])
     part_img_w = TimeDistributed(Dense(final_w_emb_dim))(part_img_w)
 
     # gate -> multimodal feature
     gate_merg = TimeDistributed(Dense(1, activation='sigmoid'))(part_img_w)
     gate_merg = TimeDistributed(RepeatVector(final_w_emb_dim))(gate_merg)
     gate_merg = TimeDistributed(Flatten())(gate_merg)
-    part_sample = merge([gate_merg, part_img_w], mode='mul')
+    # part_sample = merge([gate_merg, part_img_w], mode='mul')
+    part_sample = multiply([gate_merg, part_img_w])
 
     w_c_emb = TimeDistributed(Dense(final_w_emb_dim))(w_c_feature)
 
-    merge_multimodal_w = merge([part_sample, w_c_emb], mode='concat')
+    # merge_multimodal_w = merge([part_sample, w_c_emb], mode='concat')
+    merge_multimodal_w = concatenate([part_sample, w_c_emb])
     multimodal_w_feature = TimeDistributed(
         Dense(num_classes))(merge_multimodal_w)
-
-    crf = ChainCRF()
+    '''
+    multimodal_w_feature = TimeDistributed(
+        Dense(num_classes, activation='softmax'))(merge_multimodal_w)
+    model = Model(
+        inputs=[w_tweet, c_tweet, img], outputs=[multimodal_w_feature])
+    '''
+    crf = CRF(num_classes, sparse_target=False)
     crf_output = crf(multimodal_w_feature)
-    model = Model(input=[w_tweet, c_tweet, img], output=[crf_output])
+    model = Model(inputs=[w_tweet, c_tweet, img], outputs=[crf_output])
 
+    model.summary()
+
+    # rmsprop = RMSprop(lr=0.19, rho=0.9, epsilon=1e-08, decay=0.0)
     rmsprop = RMSprop(lr=0.19, rho=0.9, epsilon=1e-08, decay=0.0)
 
-    model.compile(loss=crf.loss, optimizer='rmsprop', metrics=['accuracy'])
-
+    model.compile(
+        loss=crf.loss_function, optimizer=rmsprop, metrics=[crf.accuracy])
+    '''
+    model.compile(
+        loss='categorical_crossentropy',
+        optimizer=rmsprop,
+        metrics=['accuracy'])
+    '''
     label_test = y_[num_train + num_dev:]
     label_dev = y_[num_train:num_train + num_dev]
 
-    print('label_test shape', np.asarray(label_test).shape)
-    print('label_dev shape', np.asarray(label_dev).shape)
+    # print('label_test shape', np.asarray(label_test).shape)
+    # print('label_dev shape', np.asarray(label_dev).shape)
 
     max_f1 = 0
+
+    try:
+        model.load_weights('./data/weights/multimodal_ner_last.h5')
+    except Exception:
+        print("No pre-trained model")
+
     for j in range(nb_epoch):
         model.fit(
             [tr_x, tr_x_c, tr_img_x],
             tr_y,
             batch_size=batch_size,
-            nb_epoch=1,
+            epochs=1,
+            verbose=1)
+
+        model.fit(
+            [te_x, te_x_c, te_img_x],
+            te_y,
+            batch_size=batch_size,
+            epochs=1,
             verbose=1)
 
         pred_dev = model.predict(
@@ -289,15 +333,18 @@ if __name__ == '__main__':
         acc_dev, f1_dev, p_dev, r_dev = evaluate(pre_dev_label_index,
                                                  label_dev, de_x, labelVoc,
                                                  sent_maxlen, id_to_vocb)
-        print('##dev##, iter:', (
-            j + 1), 'F1:', f1_dev, 'precision:', p_dev, 'recall:', r_dev)
+        print('##dev##, iter:', (j + 1), 'F1:', f1_dev, 'precision:', p_dev,
+              'recall:', r_dev)
+
+        model.save_weights('./data/weights/multimodal_ner_last.h5')
 
         if max_f1 < f1_dev:
             max_f1 = f1_dev
-            model.save_weights('../data/weights/multimodal_ner_best.h5')
+            model.save_weights('./data/weights/multimodal_ner_best.h5')
 
     print('the max dev F1 is:', max_f1)
-    model.load_weights('../data/weights/multimodal_ner_best.h5')
+    model.load_weights('./data/weights/multimodal_ner_best.h5')
+
     pred_test = model.predict(
         [te_x, te_x_c, te_img_x],
         batch_size=batch_size,

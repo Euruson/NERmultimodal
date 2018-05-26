@@ -1,4 +1,3 @@
-import codecs
 import numpy as np
 
 
@@ -76,7 +75,8 @@ def evaluate(labels_pred, labels, words, tags, max_sent, id_to_vocb):
         ...
     """
 
-    file_write = file('../data/predicted/results.txt', 'w')
+    # file_write = open('./data/predicted/results.txt', 'w')
+    file_write = open('./results.txt', 'w', encoding='utf-8')
 
     index = 0
     sents_length = []
@@ -131,7 +131,8 @@ def evaluate_each_class(labels_pred, labels, words, tags, max_sent, id_to_vocb,
             sents_length.append(35)
     accs = []
     correct_preds, total_correct, total_preds = 0., 0., 0.
-    correct_preds_cla_type, total_preds_cla_type, total_correct_cla_type = 0., 0., 0.
+    (correct_preds_cla_type, total_preds_cla_type,
+     total_correct_cla_type) = 0., 0., 0.
 
     for lab, lab_pred, length, word_sent in zip(labels, labels_pred,
                                                 sents_length, words):
@@ -204,7 +205,7 @@ if __name__ == '__main__':
     class_type = 'PER'
     acc, f1, p, r = evaluate(labels_pred, labels, words, tags, max_sent,
                              id_to_vocb)
-    print(acc, f1, p, r)
+    print("Acc.:%f F1:%f Prec.:%f Recall:%f" % (acc, f1, p, r))
     f1, p, r = evaluate_each_class(labels_pred, labels, words, tags, max_sent,
                                    id_to_vocb, class_type)
-    print(f1, p, r)
+    print("F1:%f Prec.:%f Recall:%f" % (f1, p, r))
